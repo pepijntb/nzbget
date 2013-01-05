@@ -93,6 +93,7 @@ void StringBuilder::Append(const char* szStr)
 
 XmlRpcProcessor::XmlRpcProcessor()
 {
+	m_szClientIP = NULL;
 	m_szRequest = NULL;
 	m_eProtocol = rpUndefined;
 	m_eHttpMethod = hmPost;

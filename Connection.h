@@ -43,9 +43,7 @@ public:
 		csListening,
 		csCancelled
 	};
-
-	typedef void TLS;
-
+	
 protected:
 	char*				m_szHost;
 	int					m_iPort;
@@ -57,9 +55,9 @@ protected:
 	EStatus				m_eStatus;
 	int					m_iTimeout;
 	bool				m_bSuppressErrors;
-	char				m_szRemoteAddr[20];
+	bool				m_bAutoClose;
 #ifndef DISABLE_TLS
-	TLS*				m_pTLS;
+	void*				m_pTLS;
 	static bool			bTLSLibInitialized;
 	bool				m_bTLSError;
 #endif
@@ -69,7 +67,6 @@ protected:
 #endif
 #endif
 
-						Connection(SOCKET iSocket, bool bTLS);
 	void				ReportError(const char* szMsgPrefix, const char* szMsgArg, bool PrintErrCode, int herrno);
 	virtual bool 		DoConnect();
 	virtual bool		DoDisconnect();
@@ -89,28 +86,29 @@ protected:
 
 public:
 						Connection(const char* szHost, int iPort, bool bTLS);
+						Connection(SOCKET iSocket, bool bAutoClose);
 	virtual 			~Connection();
 	static void			Init();
 	static void			Final();
 	bool 				Connect();
 	bool				Disconnect();
 	int					Bind();
-	bool				Send(const char* pBuffer, int iSize);
-	bool				Recv(char* pBuffer, int iSize);
-	int					TryRecv(char* pBuffer, int iSize);
+	int					Send(const char* pBuffer, int iSize);
+	int					Recv(char* pBuffer, int iSize);
+	bool				RecvAll(char* pBuffer, int iSize);
 	char*				ReadLine(char* pBuffer, int iSize, int* pBytesRead);
 	void				ReadBuffer(char** pBuffer, int *iBufLen);
 	int					WriteLine(const char* pBuffer);
-	Connection*			Accept();
+	SOCKET				Accept();
 	void				Cancel();
 	const char*			GetHost() { return m_szHost; }
 	int					GetPort() { return m_iPort; }
 	bool				GetTLS() { return m_bTLS; }
+	SOCKET				GetSocket() { return m_iSocket; }
 	void				SetTimeout(int iTimeout) { m_iTimeout = iTimeout; }
 	EStatus				GetStatus() { return m_eStatus; }
 	void				SetSuppressErrors(bool bSuppressErrors) { m_bSuppressErrors = bSuppressErrors; }
 	bool				GetSuppressErrors() { return m_bSuppressErrors; }
-	const char*			GetRemoteAddr();
 #ifndef DISABLE_TLS
 	bool				StartTLS();
 #endif

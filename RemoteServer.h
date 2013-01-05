@@ -45,12 +45,11 @@ public:
 class RequestProcessor : public Thread
 {
 private:
-	Connection*			m_pConnection;
+	SOCKET				m_iSocket;
 
 public:
-						~RequestProcessor();
 	virtual void		Run();
-	void				SetConnection(Connection* pConnection) { m_pConnection = pConnection; }
+	void				SetSocket(SOCKET iSocket) { m_iSocket = iSocket; };
 };
 
 #endif

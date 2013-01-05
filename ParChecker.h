@@ -52,7 +52,7 @@ public:
 		ptVerifyingRepaired,
 	};
 
-	typedef std::deque<char*>		FileList;
+	typedef std::deque<char*>		QueuedParFiles;
 	
 private:
 	char*				m_szInfoName;
@@ -62,25 +62,21 @@ private:
 	void*				m_pRepairer;	// declared as void* to prevent the including of libpar2-headers into this header-file
 	char*				m_szErrMsg;
 	bool				m_bRepairNotNeeded;
-	FileList			m_QueuedParFiles;
+	QueuedParFiles		m_QueuedParFiles;
 	Mutex			 	m_mutexQueuedParFiles;
 	bool				m_bQueuedParFilesChanged;
-	FileList			m_ProcessedFiles;
 	int					m_iProcessedFiles;
 	int					m_iFilesToRepair;
 	int					m_iExtraFiles;
-	int					m_iMissingFiles;
 	bool				m_bVerifyingExtraFiles;
 	char*				m_szProgressLabel;
 	int					m_iFileProgress;
 	int					m_iStageProgress;
 	bool				m_bCancelled;
 
-	void				Cleanup();
 	bool				LoadMorePars();
 	bool				CheckSplittedFragments();
 	bool				AddSplittedFragments(const char* szFilename);
-	bool				AddAllFiles();
 	void				signal_filename(std::string str);
 	void				signal_progress(double progress);
 	void				signal_done(std::string str, int available, int total);

@@ -144,6 +144,7 @@ Connection::Connection(const char* szHost, int iPort, bool bTLS)
 	m_iTimeout			= 60;
 	m_bSuppressErrors	= true;
 	m_szReadBuf			= (char*)malloc(CONNECTION_READBUFFER_SIZE + 1);
+	m_bAutoClose		= true;
 #ifndef DISABLE_TLS
 	m_pTLS				= NULL;
 	m_bTLSError			= false;
@@ -155,22 +156,22 @@ Connection::Connection(const char* szHost, int iPort, bool bTLS)
 	}
 }
 
-Connection::Connection(SOCKET iSocket, bool bTLS)
+Connection::Connection(SOCKET iSocket, bool bAutoClose)
 {
 	debug("Creating Connection");
 
 	m_szHost			= NULL;
 	m_iPort				= 0;
-	m_bTLS				= bTLS;
+	m_bTLS				= false;
 	m_eStatus			= csConnected;
 	m_iSocket			= iSocket;
 	m_iBufAvail			= 0;
 	m_iTimeout			= 60;
 	m_bSuppressErrors	= true;
 	m_szReadBuf			= (char*)malloc(CONNECTION_READBUFFER_SIZE + 1);
+	m_bAutoClose		= bAutoClose;
 #ifndef DISABLE_TLS
 	m_pTLS				= NULL;
-	m_bTLSError			= false;
 #endif
 }
 
@@ -178,11 +179,13 @@ Connection::~Connection()
 {
 	debug("Destroying Connection");
 
-	Disconnect();
-
 	if (m_szHost)
 	{
 		free(m_szHost);
+	}
+	if (m_bAutoClose)
+	{
+		Disconnect();
 	}
 	free(m_szReadBuf);
 #ifndef DISABLE_TLS
@@ -267,27 +270,18 @@ int Connection::WriteLine(const char* pBuffer)
 	return iRes;
 }
 
-bool Connection::Send(const char* pBuffer, int iSize)
+int Connection::Send(const char* pBuffer, int iSize)
 {
 	debug("Sending data");
 
 	if (m_eStatus != csConnected)
 	{
-		return false;
+		return -1;
 	}
 
-	int iBytesSent = 0;
-	while (iBytesSent < iSize)
-	{
-		int iRes = send(m_iSocket, pBuffer + iBytesSent, iSize-iBytesSent, 0);
-		if (iRes <= 0)
-		{
-			return false;
-		}
-		iBytesSent += iRes;
-	}
+	int iRes = send(m_iSocket, pBuffer, iSize, 0);
 
-	return true;
+	return iRes;
 }
 
 char* Connection::ReadLine(char* pBuffer, int iSize, int* pBytesRead)
@@ -302,27 +296,21 @@ char* Connection::ReadLine(char* pBuffer, int iSize, int* pBytesRead)
 	return res;
 }
 
-Connection* Connection::Accept()
+SOCKET Connection::Accept()
 {
 	debug("Accepting connection");
 
 	if (m_eStatus != csListening)
 	{
-		return NULL;
+		return INVALID_SOCKET;
 	}
 
 	SOCKET iRes = DoAccept();
-	if (iRes == INVALID_SOCKET)
-	{
-		return NULL;
-	}
-	
-	Connection* pCon = new Connection(iRes, m_bTLS);
 
-	return pCon;
+	return iRes;
 }
 
-int Connection::TryRecv(char* pBuffer, int iSize)
+int Connection::Recv(char* pBuffer, int iSize)
 {
 	debug("Receiving data");
 
@@ -338,7 +326,7 @@ int Connection::TryRecv(char* pBuffer, int iSize)
 	return iReceived;
 }
 
-bool Connection::Recv(char * pBuffer, int iSize)
+bool Connection::RecvAll(char * pBuffer, int iSize)
 {
 	debug("Receiving data (full buffer)");
 
@@ -482,7 +470,10 @@ bool Connection::DoDisconnect()
 		closesocket(m_iSocket);
 		m_iSocket = INVALID_SOCKET;
 #ifndef DISABLE_TLS
-		CloseTLS();
+		if (m_pTLS)
+		{
+			CloseTLS();
+		}
 #endif
 	}
 
@@ -675,7 +666,7 @@ int Connection::DoBind()
 
 SOCKET Connection::DoAccept()
 {
-	SOCKET iSocket = accept(m_iSocket, NULL, NULL);
+	SOCKET iSocket = accept(GetSocket(), NULL, NULL);
 
 	if (iSocket == INVALID_SOCKET && m_eStatus != csCancelled)
 	{
@@ -789,12 +780,13 @@ bool Connection::StartTLS()
 	m_pTLS = malloc(sizeof(tls_t));
 	tls_t* pTLS = (tls_t*)m_pTLS;
 	memset(pTLS, 0, sizeof(tls_t));
+	tls_clear(pTLS);
 
 	char* szErrStr;
 	int iRes;
-
+		
 	iRes = tls_init(pTLS, NULL, NULL, NULL, 0, &szErrStr);
-	if (!CheckTLSResult(iRes, szErrStr, "Could not initialize secure connection: %s"))
+	if (!CheckTLSResult(iRes, szErrStr, "Could not initialize TLS-object: %s"))
 	{
 		return false;
 	}
@@ -812,12 +804,9 @@ bool Connection::StartTLS()
 
 void Connection::CloseTLS()
 {
-	if (m_pTLS)
-	{
-		tls_close((tls_t*)m_pTLS);
-		free(m_pTLS);
-		m_pTLS = NULL;
-	}
+	tls_close((tls_t*)m_pTLS);
+	free(m_pTLS);
+	m_pTLS = NULL;
 }
 
 int Connection::recv(SOCKET s, char* buf, int len, int flags)
@@ -829,7 +818,7 @@ int Connection::recv(SOCKET s, char* buf, int len, int flags)
 		m_bTLSError = false;
 		char* szErrStr;
 		int iRes = tls_getbuf((tls_t*)m_pTLS, buf, len, &iReceived, &szErrStr);
-		if (!CheckTLSResult(iRes, szErrStr, "TLS-error: %s"))
+		if (!CheckTLSResult(iRes, szErrStr, "Could not read from TLS-socket: %s"))
 		{
 			m_bTLSError = true;
 			return -1;
@@ -849,12 +838,12 @@ int Connection::send(SOCKET s, const char* buf, int len, int flags)
 		m_bTLSError = false;
 		char* szErrStr;
 		int iRes = tls_putbuf((tls_t*)m_pTLS, buf, len, &szErrStr);
-		if (!CheckTLSResult(iRes, szErrStr, "TLS-error: %s"))
+		if (!CheckTLSResult(iRes, szErrStr, "Could not send to TLS-socket: %s"))
 		{
 			m_bTLSError = true;
 			return -1;
 		}
-		return len;
+		return 0;
 	}
 	else
 	{
@@ -913,20 +902,3 @@ unsigned int Connection::ResolveHostAddr(const char* szHost)
 	return uaddr;
 }
 #endif
-
-const char* Connection::GetRemoteAddr()
-{
-	struct sockaddr_in PeerName;
-	int iPeerNameLength = sizeof(PeerName);
-	if (getpeername(m_iSocket, (struct sockaddr*)&PeerName, (SOCKLEN_T*) &iPeerNameLength) >= 0)
-	{
-#ifdef WIN32
-		 strncpy(m_szRemoteAddr, sizeof(m_szRemoteAddr), inet_ntoa(PeerName.sin_addr));
-#else
-		inet_ntop(AF_INET, &PeerName.sin_addr, m_szRemoteAddr, sizeof(m_szRemoteAddr));
-#endif
-	}
-	m_szRemoteAddr[sizeof(m_szRemoteAddr)-1] = '\0';
-	
-	return m_szRemoteAddr;
-}

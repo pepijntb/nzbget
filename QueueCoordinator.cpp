@@ -555,22 +555,8 @@ void QueueCoordinator::BuildArticleFilename(ArticleDownloader* pArticleDownloade
 
 	if (g_pOptions->GetDirectWrite())
 	{
-		pFileInfo->LockOutputFile();
-
-		if (pFileInfo->GetOutputFilename())
-		{
-			strncpy(name, pFileInfo->GetOutputFilename(), 1024);
-			name[1024-1] = '\0';
-		}
-		else
-		{
-			snprintf(name, 1024, "%s%c%i.out.tmp", pFileInfo->GetNZBInfo()->GetDestDir(), (int)PATH_SEPARATOR, pFileInfo->GetID());
-			name[1024-1] = '\0';
-			pFileInfo->SetOutputFilename(name);
-		}
-
-		pFileInfo->UnlockOutputFile();
-
+		snprintf(name, 1024, "%s%i.out", g_pOptions->GetTempDir(), pFileInfo->GetID());
+		name[1024-1] = '\0';
 		pArticleDownloader->SetOutputFilename(name);
 	}
 }
@@ -746,9 +732,12 @@ void QueueCoordinator::DiscardDiskFile(FileInfo* pFileInfo)
 		}
 	}
 
-	if (g_pOptions->GetDirectWrite() && pFileInfo->GetOutputFilename())
+	if (g_pOptions->GetDirectWrite())
 	{
-		remove(pFileInfo->GetOutputFilename());
+		char name[1024];
+		snprintf(name, 1024, "%s%i.out", g_pOptions->GetTempDir(), pFileInfo->GetID());
+		name[1024-1] = '\0';
+		remove(name);
 	}
 }
 

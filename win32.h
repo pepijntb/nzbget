@@ -57,9 +57,6 @@
 /* Define to 1 if libpar2 supports cancelling (needs a special patch) */
 #define HAVE_PAR2_CANCEL
 
-/* Define to 1 if libpar2 has bugfixes applied (needs a special patch) */
-#define HAVE_PAR2_BUGFIXES_V2
-
 /* Define to 1 if function GetAddrInfo is supported */
 #define HAVE_GETADDRINFO
 
@@ -72,7 +69,7 @@
 /* Define to 1 if spinlocks are supported */
 #define HAVE_SPINLOCK
 
-#define VERSION "10.0-testing"
+#define VERSION "9.0-testing"
 
 /* Suppress warnings */
 #define _CRT_SECURE_NO_DEPRECATE

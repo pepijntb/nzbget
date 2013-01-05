@@ -82,12 +82,6 @@ public:
 		lpOne,
 		lpAll
 	};
-	enum EParScan
-	{
-		psLimited,
-		psFull,
-		psAuto
-	};
 	enum EScriptLogKind
 	{
 		slNone,
@@ -146,33 +140,10 @@ public:
 
 	typedef std::vector<char*>  NameList;
 
-	class Category
-	{
-	private:
-		char*			m_szName;
-		char*			m_szDestDir;
-
-	public:
-						Category(const char* szName, const char* szDestDir);
-						~Category();
-		const char*		GetName() { return m_szName; }
-		const char*		GetDestDir() { return m_szDestDir; }
-	};
-	
-	typedef std::vector<Category*>  CategoriesBase;
-
-	class Categories: public CategoriesBase
-	{
-	public:
-						~Categories();
-		Category*		FindCategory(const char* szName);
-	};
-
 private:
 	OptEntries			m_OptEntries;
 	bool				m_bConfigInitialized;
 	Mutex				m_mutexOptEntries;
-	Categories			m_Categories;
 
 	// Options
 	bool				m_bConfigErrors;
@@ -217,7 +188,6 @@ private:
 	ELoadPars			m_eLoadPars;
 	bool				m_bParCheck;
 	bool				m_bParRepair;
-	EParScan			m_eParScan;
 	char*				m_szPostProcess;
 	char*				m_szPostConfigFilename;
 	char*				m_szNZBProcess;
@@ -290,7 +260,6 @@ private:
 	void				InitPostConfig();
 	void				InitFileArg(int argc, char* argv[]);
 	void				InitServers();
-	void				InitCategories();
 	void				InitScheduler();
 	void				CheckOptions();
 	void				PrintUsage(char* com);
@@ -310,7 +279,6 @@ private:
 	bool				ParseTime(const char** pTime, int* pHours, int* pMinutes);
 	bool				ParseWeekDays(const char* szWeekDays, int* pWeekDaysBits);
 	void				ConfigError(const char* msg, ...);
-	void				LocateOptionSrcPos(const char *szOptionName);
 	void				ConvertOldOptionName(char *szOption, int iBufLen);
 
 public:
@@ -363,7 +331,6 @@ public:
 	ELoadPars			GetLoadPars() { return m_eLoadPars; }
 	bool				GetParCheck() { return m_bParCheck; }
 	bool				GetParRepair() { return m_bParRepair; }
-	EParScan			GetParScan() { return m_eParScan; }
 	const char*			GetPostProcess() { return m_szPostProcess; }
 	const char*			GetPostConfigFilename() { return m_szPostConfigFilename; }
 	const char*			GetNZBProcess() { return m_szNZBProcess; }
@@ -395,7 +362,6 @@ public:
 	int					GetParTimeLimit() { return m_iParTimeLimit; }
 	int					GetKeepHistory() { return m_iKeepHistory; }
 	bool				GetAccurateRate() { return m_bAccurateRate; }
-	Category*			FindCategory(const char* szName) { return m_Categories.FindCategory(szName); }
 
 	// Parsed command-line parameters
 	bool				GetServerMode() { return m_bServerMode; }

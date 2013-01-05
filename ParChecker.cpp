@@ -67,60 +67,8 @@ const char* Par2CmdLineErrStr[] = { "OK",
 
 class Repairer : public Par2Repairer
 {
-private:
-    CommandLine	commandLine;
-
-public:
-	Result		PreProcess(const char *szParFilename);
-	Result		Process(bool dorepair);
-
 	friend class ParChecker;
 };
-
-
-Result Repairer::PreProcess(const char *szParFilename)
-{
-#ifdef HAVE_PAR2_BUGFIXES_V2
-	// Ensure linking against the patched version of libpar2
-	BugfixesPatchVersion2();
-#endif
-
-	bool bFullScan = true;
-
-	if (g_pOptions->GetParScan() == Options::psFull)
-	{
-		char szWildcardParam[1024];
-		strncpy(szWildcardParam, szParFilename, 1024);
-		szWildcardParam[1024-1] = '\0';
-		char* szBasename = Util::BaseFileName(szWildcardParam);
-		if (szBasename != szWildcardParam && strlen(szBasename) > 0)
-		{
-			szBasename[0] = '*';
-			szBasename[1] = '\0';
-		}
-
-		const char* argv[] = { "par2", "r", "-v", "-v", szParFilename, szWildcardParam };
-		if (!commandLine.Parse(6, (char**)argv))
-		{
-			return eInvalidCommandLineArguments;
-		}
-	}
-	else
-	{
-		const char* argv[] = { "par2", "r", "-v", "-v", szParFilename };
-		if (!commandLine.Parse(5, (char**)argv))
-		{
-			return eInvalidCommandLineArguments;
-		}
-	}
-
-	return Par2Repairer::PreProcess(commandLine);
-}
-
-Result Repairer::Process(bool dorepair)
-{
-	return Par2Repairer::Process(commandLine, dorepair);
-}
 
 
 ParChecker::ParChecker()
@@ -135,10 +83,10 @@ ParChecker::ParChecker()
 	m_iFileProgress = 0;
 	m_iStageProgress = 0;
 	m_iExtraFiles = 0;
-	m_iMissingFiles = 0;
 	m_bVerifyingExtraFiles = false;
 	m_bCancelled = false;
 	m_eStage = ptLoadingPars;
+	m_QueuedParFiles.clear();
 }
 
 ParChecker::~ParChecker()
@@ -159,22 +107,11 @@ ParChecker::~ParChecker()
 	}
 	free(m_szProgressLabel);
 
-	Cleanup();
-}
-
-void ParChecker::Cleanup()
-{
-	for (FileList::iterator it = m_QueuedParFiles.begin(); it != m_QueuedParFiles.end() ;it++)
+	for (QueuedParFiles::iterator it = m_QueuedParFiles.begin(); it != m_QueuedParFiles.end() ;it++)
 	{
 		free(*it);
 	}
 	m_QueuedParFiles.clear();
-
-	for (FileList::iterator it = m_ProcessedFiles.begin(); it != m_ProcessedFiles.end() ;it++)
-	{
-		free(*it);
-	}
-	m_ProcessedFiles.clear();
 }
 
 void ParChecker::SetParFilename(const char * szParFilename)
@@ -203,12 +140,10 @@ void ParChecker::SetStatus(EStatus eStatus)
 
 void ParChecker::Run()
 {
-	Cleanup();
 	m_bRepairNotNeeded = false;
 	m_eStage = ptLoadingPars;
 	m_iProcessedFiles = 0;
 	m_iExtraFiles = 0;
-	m_iMissingFiles = 0;
 	m_bVerifyingExtraFiles = false;
 	m_bCancelled = false;
 
@@ -216,7 +151,15 @@ void ParChecker::Run()
 	SetStatus(psWorking);
 
     debug("par: %s", m_szParFilename);
-	
+    CommandLine commandLine;
+    const char* argv[] = { "par2", "r", "-v", "-v", m_szParFilename };
+    if (!commandLine.Parse(5, (char**)argv))
+    {
+        error("Could not start par-check for %s. Par-file: %s", m_szInfoName, m_szParFilename);
+		SetStatus(psFailed);
+        return;
+    }
+
     Result res;
 
 	Repairer* pRepairer = new Repairer();
@@ -232,24 +175,15 @@ void ParChecker::Run()
 	m_iStageProgress = 0;
 	UpdateProgress();
 
-    res = pRepairer->PreProcess(m_szParFilename);
+    res = pRepairer->PreProcess(commandLine);
     debug("ParChecker: PreProcess-result=%i", res);
 
 	if (res != eSuccess || IsStopped())
 	{
-		if (res == eInvalidCommandLineArguments)
-		{
-			error("Could not start par-check for %s. Par-file: %s", m_szInfoName, m_szParFilename);
-			m_szErrMsg = strdup("Command line could not be parsed");
-		}
-		else
-		{
-			error("Could not verify %s: %s", m_szInfoName, IsStopped() ? "due stopping" : "par2-file could not be processed");
-			m_szErrMsg = strdup("par2-file could not be processed");
-		}
+       	error("Could not verify %s: %s", m_szInfoName, IsStopped() ? "due stopping" : "par2-file could not be processed");
+		m_szErrMsg = strdup("par2-file could not be processed");
 		SetStatus(psFailed);
 		delete pRepairer;
-		Cleanup();
 		return;
 	}
 
@@ -262,20 +196,13 @@ void ParChecker::Run()
 	m_szErrMsg = NULL;
 	
 	m_eStage = ptVerifyingSources;
-    res = pRepairer->Process(false);
+    res = pRepairer->Process(commandLine, false);
     debug("ParChecker: Process-result=%i", res);
-
-	if (!IsStopped() && m_iMissingFiles > 0 && g_pOptions->GetParScan() == Options::psAuto && AddAllFiles())
-	{
-		pRepairer->UpdateVerificationResults();
-		res = pRepairer->Process(false);
-		debug("ParChecker: Process-result=%i", res);
-	}
 
 	if (!IsStopped() && res == eRepairNotPossible && CheckSplittedFragments())
 	{
 		pRepairer->UpdateVerificationResults();
-		res = pRepairer->Process(false);
+		res = pRepairer->Process(commandLine, false);
 		debug("ParChecker: Process-result=%i", res);
 	}
 
@@ -340,7 +267,7 @@ void ParChecker::Run()
 		if (bMoreFilesLoaded)
 		{
 			pRepairer->UpdateVerificationResults();
-			res = pRepairer->Process(false);
+			res = pRepairer->Process(commandLine, false);
 			debug("ParChecker: Process-result=%i", res);
 		}
 	}
@@ -349,7 +276,6 @@ void ParChecker::Run()
 	{
 		SetStatus(psFailed);
 		delete pRepairer;
-		Cleanup();
 		return;
 	}
 	
@@ -373,7 +299,7 @@ void ParChecker::Run()
 			m_iFilesToRepair = pRepairer->damagedfilecount + pRepairer->missingfilecount;
 			UpdateProgress();
 
-			res = pRepairer->Process(true);
+			res = pRepairer->Process(commandLine, true);
     		debug("ParChecker: Process-result=%i", res);
 			if (res == eSuccess)
 			{
@@ -408,18 +334,17 @@ void ParChecker::Run()
 	}
 	
 	delete pRepairer;
-	Cleanup();
 }
 
 bool ParChecker::LoadMorePars()
 {
 	m_mutexQueuedParFiles.Lock();
-	FileList moreFiles;
+	QueuedParFiles moreFiles;
 	moreFiles.assign(m_QueuedParFiles.begin(), m_QueuedParFiles.end());
 	m_QueuedParFiles.clear();
 	m_mutexQueuedParFiles.Unlock();
 	
-	for (FileList::iterator it = moreFiles.begin(); it != moreFiles.end() ;it++)
+	for (QueuedParFiles::iterator it = moreFiles.begin(); it != moreFiles.end() ;it++)
 	{
 		char* szParFilename = *it;
 		bool loadedOK = ((Repairer*)m_pRepairer)->LoadPacketsFromFile(szParFilename);
@@ -513,71 +438,13 @@ bool ParChecker::AddSplittedFragments(const char* szFilename)
 
 	if (!extrafiles.empty())
 	{
-		m_iExtraFiles += extrafiles.size();
+		m_iExtraFiles = extrafiles.size();
 		m_bVerifyingExtraFiles = true;
 		bFragmentsAdded = ((Repairer*)m_pRepairer)->VerifyExtraFiles(extrafiles);
 		m_bVerifyingExtraFiles = false;
 	}
 
 	return bFragmentsAdded;
-}
-
-bool ParChecker::AddAllFiles()
-{
-    info("Performing full par-scan for %s", m_szInfoName);
-
-	char szDirectory[1024];
-	strncpy(szDirectory, m_szParFilename, 1024);
-	szDirectory[1024-1] = '\0';
-
-	char* szBasename = Util::BaseFileName(szDirectory);
-	if (szBasename == szDirectory)
-	{
-		return false;
-	}
-	szBasename[-1] = '\0';
-
-	list<CommandLine::ExtraFile> extrafiles;
-
-	DirBrowser dir(szDirectory);
-	while (const char* filename = dir.Next())
-	{
-		if (strcmp(filename, ".") && strcmp(filename, "..") && strcmp(filename, "_brokenlog.txt"))
-		{
-			bool bAlreadyScanned = false;
-			for (FileList::iterator it = m_ProcessedFiles.begin(); it != m_ProcessedFiles.end(); it++)
-			{
-				const char* szProcessedFilename = *it;
-				if (!strcasecmp(Util::BaseFileName(szProcessedFilename), filename))
-				{
-					bAlreadyScanned = true;
-					break;
-				}
-			}
-
-			if (!bAlreadyScanned)
-			{
-				char fullfilename[1024];
-				snprintf(fullfilename, 1024, "%s%c%s", szDirectory, PATH_SEPARATOR, filename);
-				fullfilename[1024-1] = '\0';
-
-				CommandLine::ExtraFile extrafile(fullfilename, Util::FileSize(fullfilename));
-				extrafiles.push_back(extrafile);
-			}
-		}
-	}
-
-	bool bFilesAdded = false;
-
-	if (!extrafiles.empty())
-	{
-		m_iExtraFiles += extrafiles.size();
-		m_bVerifyingExtraFiles = true;
-		bFilesAdded = ((Repairer*)m_pRepairer)->VerifyExtraFiles(extrafiles);
-		m_bVerifyingExtraFiles = false;
-	}
-
-	return bFilesAdded;
 }
 
 void ParChecker::signal_filename(std::string str)
@@ -590,11 +457,6 @@ void ParChecker::signal_filename(std::string str)
 	}
 
 	info("%s %s", szStageMessage[m_eStage], str.c_str());
-
-	if (m_eStage == ptLoadingPars || m_eStage == ptVerifyingSources)
-	{
-		m_ProcessedFiles.push_back(strdup(str.c_str()));
-	}
 
 	snprintf(m_szProgressLabel, 1024, "%s %s", szStageMessage[m_eStage], str.c_str());
 	m_szProgressLabel[1024-1] = '\0';
@@ -678,7 +540,6 @@ void ParChecker::signal_done(std::string str, int available, int total)
 			else
 			{
 				warn("File %s with %i block(s) is missing", str.c_str(), total);
-				m_iMissingFiles++;
 			}
 		}
 	}
@@ -690,7 +551,7 @@ void ParChecker::Cancel()
 	((Repairer*)m_pRepairer)->cancelled = true;
 	m_bCancelled = true;
 #else
-	error("Could not cancel par-repair. The program was compiled using version of libpar2 which doesn't support cancelling of par-repair. Please apply libpar2-patches supplied with NZBGet and recompile libpar2 and NZBGet (see README for details).");
+	error("Could not cancel par-repair. The used version of libpar2 does not support the cancelling of par-repair. Libpar2 needs to be patched for that feature to work.");
 #endif
 }
 

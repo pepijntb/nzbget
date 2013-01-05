@@ -47,7 +47,6 @@
 #include "WebServer.h"
 #include "Log.h"
 #include "Options.h"
-#include "Util.h"
 
 extern Options* g_pOptions;
 
@@ -87,13 +86,13 @@ void RemoteServer::Run()
 			bBind = m_pConnection->Bind() == 0;
 		}
 
-		// Accept connections and store the new Connection
-		Connection* pAcceptedConnection = NULL;
+		// Accept connections and store the "new" socket value
+		SOCKET iSocket = INVALID_SOCKET;
 		if (bBind)
 		{
-			pAcceptedConnection = m_pConnection->Accept();
+			iSocket = m_pConnection->Accept();
 		}
-		if (!bBind || pAcceptedConnection == NULL)
+		if (!bBind || iSocket == INVALID_SOCKET)
 		{
 			// Remote server could not bind or accept connection, waiting 1/2 sec and try again
 			if (IsStopped())
@@ -108,7 +107,7 @@ void RemoteServer::Run()
 
 		RequestProcessor* commandThread = new RequestProcessor();
 		commandThread->SetAutoDestroy(true);
-		commandThread->SetConnection(pAcceptedConnection);
+		commandThread->SetSocket(iSocket);
 		commandThread->Start();
 	}
 	if (m_pConnection)
@@ -135,22 +134,32 @@ void RemoteServer::Stop()
 //*****************************************************************
 // RequestProcessor
 
-RequestProcessor::~RequestProcessor()
-{
-	m_pConnection->Disconnect();
-	delete m_pConnection;
-}
-
 void RequestProcessor::Run()
 {
-	bool bOK = false;
-
 	// Read the first 4 bytes to determine request type
+	bool bOK = false;
 	int iSignature = 0;
-	if (!m_pConnection->Recv((char*)&iSignature, 4))
+	int iBytesReceived = recv(m_iSocket, (char*)&iSignature, sizeof(iSignature), 0);
+	if (iBytesReceived < 0)
 	{
-		warn("Non-nzbget request received on port %i from %s", g_pOptions->GetControlPort(), m_pConnection->GetRemoteAddr());
 		return;
+	}
+
+	// Info - connection received
+#ifdef WIN32
+	char* ip = NULL;
+#else
+	char ip[20];
+#endif
+	struct sockaddr_in PeerName;
+	int iPeerNameLength = sizeof(PeerName);
+	if (getpeername(m_iSocket, (struct sockaddr*)&PeerName, (SOCKLEN_T*) &iPeerNameLength) >= 0)
+	{
+#ifdef WIN32
+		ip = inet_ntoa(PeerName.sin_addr);
+#else
+		inet_ntop(AF_INET, &PeerName.sin_addr, ip, sizeof(ip));
+#endif
 	}
 
 	if ((int)ntohl(iSignature) == (int)NZBMESSAGE_SIGNATURE)
@@ -158,7 +167,9 @@ void RequestProcessor::Run()
 		// binary request received
 		bOK = true;
 		BinRpcProcessor processor;
-		processor.SetConnection(m_pConnection);
+		processor.SetSocket(m_iSocket);
+		processor.SetSignature(iSignature);
+		processor.SetClientIP(ip);
 		processor.Execute();
 	}
 	else if (!strncmp((char*)&iSignature, "POST", 4) || 
@@ -166,8 +177,9 @@ void RequestProcessor::Run()
 		!strncmp((char*)&iSignature, "OPTI", 4))
 	{
 		// HTTP request received
+		Connection con(m_iSocket, false);
 		char szBuffer[1024];
-		if (m_pConnection->ReadLine(szBuffer, sizeof(szBuffer), NULL))
+		if (con.ReadLine(szBuffer, sizeof(szBuffer), NULL))
 		{
 			WebProcessor::EHttpMethod eHttpMethod = WebProcessor::hmGet;
 			char* szUrl = szBuffer;
@@ -189,7 +201,8 @@ void RequestProcessor::Run()
 			debug("url: %s", szUrl);
 
 			WebProcessor processor;
-			processor.SetConnection(m_pConnection);
+			processor.SetConnection(&con);
+			processor.SetClientIP(ip);
 			processor.SetUrl(szUrl);
 			processor.SetHttpMethod(eHttpMethod);
 			processor.Execute();
@@ -197,8 +210,15 @@ void RequestProcessor::Run()
 		}
 	}
 
-	if (!bOK)
+	if (!bOK && iBytesReceived > 0)
 	{
-		warn("Non-nzbget request received on port %i from %s", g_pOptions->GetControlPort(), m_pConnection->GetRemoteAddr());
+		warn("Non-nzbget request received on port %i from %s", g_pOptions->GetControlPort(), ip);
 	}
+
+	if (!bOK && iBytesReceived == 0)
+	{
+		debug("empty request received on port %i from %s", g_pOptions->GetControlPort(), ip);
+	}
+
+	closesocket(m_iSocket);
 }

@@ -136,7 +136,6 @@ static const char* OPTION_DETAILTARGET			= "DetailTarget";
 static const char* OPTION_LOADPARS				= "LoadPars";
 static const char* OPTION_PARCHECK				= "ParCheck";
 static const char* OPTION_PARREPAIR				= "ParRepair";
-static const char* OPTION_PARSCAN				= "ParScan";
 static const char* OPTION_POSTPROCESS			= "PostProcess";
 static const char* OPTION_POSTCONFIGFILE		= "PostConfigFile";
 static const char* OPTION_NZBPROCESS			= "NZBProcess";
@@ -251,9 +250,9 @@ Options::OptEntries::~OptEntries()
 	}
 }
 
-Options::OptEntry* Options::OptEntries::FindOption(const char* szName)
+Options::OptEntry* Options::OptEntries::FindOption(const char* optname)
 {
-	if (!szName)
+	if (!optname)
 	{
 		return NULL;
 	}
@@ -261,55 +260,9 @@ Options::OptEntry* Options::OptEntries::FindOption(const char* szName)
 	for (iterator it = begin(); it != end(); it++)
 	{
 		OptEntry* pOptEntry = *it;
-		if (!strcasecmp(pOptEntry->GetName(), szName))
+		if (!strcasecmp(pOptEntry->GetName(), optname))
 		{
 			return pOptEntry;
-		}
-	}
-
-	return NULL;
-}
-
-
-Options::Category::Category(const char* szName, const char* szDestDir)
-{
-	m_szName = strdup(szName);
-	m_szDestDir = szDestDir ? strdup(szDestDir) : NULL;
-}
-
-Options::Category::~Category()
-{
-	if (m_szName)
-	{
-		free(m_szName);
-	}
-	if (m_szDestDir)
-	{
-		free(m_szDestDir);
-	}
-}
-
-Options::Categories::~Categories()
-{
-	for (iterator it = begin(); it != end(); it++)
-	{
-		delete *it;
-	}
-}
-
-Options::Category* Options::Categories::FindCategory(const char* szName)
-{
-	if (!szName)
-	{
-		return NULL;
-	}
-
-	for (iterator it = begin(); it != end(); it++)
-	{
-		Category* pCategory = *it;
-		if (!strcasecmp(pCategory->GetName(), szName))
-		{
-			return pCategory;
 		}
 	}
 
@@ -387,7 +340,6 @@ Options::Options(int argc, char* argv[])
 	m_eLoadPars				= lpAll;
 	m_bParCheck				= false;
 	m_bParRepair			= false;
-	m_eParScan				= psLimited;
 	m_szPostProcess			= NULL;
 	m_szPostConfigFilename	= NULL;
 	m_szNZBProcess			= NULL;
@@ -480,7 +432,6 @@ Options::Options(int argc, char* argv[])
 	}
 
 	InitServers();
-	InitCategories();
 	InitScheduler();
 	CheckOptions();
 
@@ -619,19 +570,6 @@ void Options::ConfigError(const char* msg, ...)
 	m_bConfigErrors = true;
 }
 
-void Options::LocateOptionSrcPos(const char *szOptionName)
-{
-	OptEntry* pOptEntry = FindOption(szOptionName);
-	if (pOptEntry)
-	{
-		m_iConfigLine = pOptEntry->GetLineNo();
-	}
-	else
-	{
-		m_iConfigLine = 0;
-	}
-}
-
 void Options::InitDefault()
 {
 #ifdef WIN32
@@ -678,7 +616,6 @@ void Options::InitDefault()
 	SetOption(OPTION_LOADPARS, "one");
 	SetOption(OPTION_PARCHECK, "no");
 	SetOption(OPTION_PARREPAIR, "yes");
-	SetOption(OPTION_PARSCAN, "limited");
 	SetOption(OPTION_POSTPROCESS, "");
 	SetOption(OPTION_POSTCONFIGFILE, "");
 	SetOption(OPTION_NZBPROCESS, "");
@@ -895,13 +832,8 @@ void Options::InitOptions()
 
 	const char* LoadParsNames[] = { "none", "one", "all", "1", "0" };
 	const int LoadParsValues[] = { lpNone, lpOne, lpAll, lpOne, lpNone };
-	const int LoadParsCount = 5;
+	const int LoadParsCount = 4;
 	m_eLoadPars = (ELoadPars)ParseEnumValue(OPTION_LOADPARS, LoadParsCount, LoadParsNames, LoadParsValues);
-
-	const char* ParScanNames[] = { "limited", "full", "auto" };
-	const int ParScanValues[] = { psLimited, psFull, psAuto };
-	const int ParScanCount = 3;
-	m_eParScan = (EParScan)ParseEnumValue(OPTION_PARSCAN, ParScanCount, ParScanNames, ParScanValues);
 
 	const char* TargetNames[] = { "screen", "log", "both", "none" };
 	const int TargetValues[] = { mtScreen, mtLog, mtBoth, mtNone };
@@ -1877,41 +1809,6 @@ void Options::InitServers()
 	g_pServerPool->SetTimeout(GetConnectionTimeout());
 }
 
-void Options::InitCategories()
-{
-	int n = 1;
-	while (true)
-	{
-		char optname[128];
-
-		sprintf(optname, "Category%i.Name", n);
-		const char* nname = GetOption(optname);
-
-		sprintf(optname, "Category%i.DestDir", n);
-		const char* ndestdir = GetOption(optname);
-
-		bool definition = nname || ndestdir;
-		bool completed = nname && strlen(nname) > 0;
-
-		if (!definition)
-		{
-			break;
-		}
-
-		if (completed)
-		{
-			Category* pCategory = new Category(nname, ndestdir);
-			m_Categories.push_back(pCategory);
-		}
-		else
-		{
-			ConfigError("Category definition not complete for \"Category%i\"", n);
-		}
-
-		n++;
-	}
-}
-
 void Options::InitScheduler()
 {
 	int n = 1;
@@ -2267,7 +2164,7 @@ bool Options::ValidateOptionName(const char * optname)
 	{
 		char* p = (char*)optname + 8;
 		while (*p >= '0' && *p <= '9') p++;
-		if (p && (!strcasecmp(p, ".name") || !strcasecmp(p, ".destdir")))
+		if (p && (!strcasecmp(p, ".name")))
 		{
 			return true;
 		}
@@ -2288,7 +2185,6 @@ void Options::CheckOptions()
 #ifdef DISABLE_PARCHECK
 	if (m_bParCheck)
 	{
-		LocateOptionSrcPos(OPTION_PARCHECK);
 		ConfigError("Invalid value for option \"%s\": program was compiled without parcheck-support", OPTION_PARCHECK);
 	}
 #endif
@@ -2296,7 +2192,6 @@ void Options::CheckOptions()
 #ifdef DISABLE_CURSES
 	if (m_eOutputMode == omNCurses)
 	{
-		LocateOptionSrcPos(OPTION_OUTPUTMODE);
 		ConfigError("Invalid value for option \"%s\": program was compiled without curses-support", OPTION_OUTPUTMODE);
 	}
 #endif
