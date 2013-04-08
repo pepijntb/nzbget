@@ -1379,7 +1379,6 @@ EditCommandEntry EditCommandNameMap[] = {
 	{ QueueEditor::eaFilePauseExtraPars, "FilePauseExtraPars" },
 	{ QueueEditor::eaFileSetPriority, "FileSetPriority" },
 	{ QueueEditor::eaFileReorder, "FileReorder" },
-	{ QueueEditor::eaFileSplit, "FileSplit" },
 	{ QueueEditor::eaGroupMoveOffset, "GroupMoveOffset" },
 	{ QueueEditor::eaGroupMoveTop, "GroupMoveTop" },
 	{ QueueEditor::eaGroupMoveBottom, "GroupMoveBottom" },
@@ -1565,7 +1564,7 @@ void PostQueueXmlCommand::Execute()
 		"<member><name>NZBNicename</name><value><string>%s</string></value></member>\n"		// deprecated, use "NZBName" instead
 		"<member><name>NZBFilename</name><value><string>%s</string></value></member>\n"
 		"<member><name>DestDir</name><value><string>%s</string></value></member>\n"
-		"<member><name>ParFilename</name><value><string>%s</string></value></member>\n"		// deprecated, always empty
+		"<member><name>ParFilename</name><value><string>%s</string></value></member>\n"
 		"<member><name>InfoName</name><value><string>%s</string></value></member>\n"
 		"<member><name>Stage</name><value><string>%s</string></value></member>\n"
 		"<member><name>ProgressLabel</name><value><string>%s</string></value></member>\n"
@@ -1587,7 +1586,7 @@ void PostQueueXmlCommand::Execute()
 		"\"NZBNicename\" : \"%s\",\n"	// deprecated, use "NZBName" instead
 		"\"NZBFilename\" : \"%s\",\n"
 		"\"DestDir\" : \"%s\",\n"
-		"\"ParFilename\" : \"%s\",\n"	// deprecated, always empty
+		"\"ParFilename\" : \"%s\",\n"
 		"\"InfoName\" : \"%s\",\n"
 		"\"Stage\" : \"%s\",\n"
 		"\"ProgressLabel\" : \"%s\",\n"
@@ -1635,12 +1634,13 @@ void PostQueueXmlCommand::Execute()
 		char* xmlNZBNicename = EncodeStr(pPostInfo->GetNZBInfo()->GetName());
 		char* xmlNZBFilename = EncodeStr(pPostInfo->GetNZBInfo()->GetFilename());
 		char* xmlDestDir = EncodeStr(pPostInfo->GetNZBInfo()->GetDestDir());
+		char* xmlParFilename = EncodeStr(pPostInfo->GetParFilename());
 		char* xmlInfoName = EncodeStr(pPostInfo->GetInfoName());
 		char* xmlProgressLabel = EncodeStr(pPostInfo->GetProgressLabel());
 
 		snprintf(szItemBuf, szItemBufSize, IsJson() ? JSON_POSTQUEUE_ITEM_START : XML_POSTQUEUE_ITEM_START,
 			pPostInfo->GetID(), pPostInfo->GetNZBInfo()->GetID(), xmlNZBNicename,
-			xmlNZBNicename, xmlNZBFilename, xmlDestDir, "",
+			xmlNZBNicename, xmlNZBFilename, xmlDestDir, xmlParFilename,
 			xmlInfoName, szPostStageName[pPostInfo->GetStage()], xmlProgressLabel,
 			pPostInfo->GetFileProgress(), pPostInfo->GetStageProgress(),
 			pPostInfo->GetStartTime() ? tCurTime - pPostInfo->GetStartTime() : 0,
@@ -1650,6 +1650,7 @@ void PostQueueXmlCommand::Execute()
 		free(xmlNZBNicename);
 		free(xmlNZBFilename);
 		free(xmlDestDir);
+		free(xmlParFilename);
 		free(xmlInfoName);
 		free(xmlProgressLabel);
 

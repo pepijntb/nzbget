@@ -82,7 +82,7 @@ bool DiskState::SaveDownloadQueue(DownloadQueue* pDownloadQueue)
 		return false;
 	}
 
-	fprintf(outfile, "%s%i\n", FORMATVERSION_SIGNATURE, 22);
+	fprintf(outfile, "%s%i\n", FORMATVERSION_SIGNATURE, 21);
 
 	// save nzb-infos
 	SaveNZBList(pDownloadQueue, outfile);
@@ -136,7 +136,7 @@ bool DiskState::LoadDownloadQueue(DownloadQueue* pDownloadQueue)
 	char FileSignatur[128];
 	fgets(FileSignatur, sizeof(FileSignatur), infile);
 	int iFormatVersion = ParseFormatVersion(FileSignatur);
-	if (iFormatVersion < 3 || iFormatVersion > 22)
+	if (iFormatVersion < 3 || iFormatVersion > 21)
 	{
 		error("Could not load diskstate due to file version mismatch");
 		fclose(infile);
@@ -632,8 +632,10 @@ void DiskState::SavePostQueue(DownloadQueue* pDownloadQueue, FILE* outfile)
 	{
 		PostInfo* pPostInfo = *it;
 		int iNZBIndex = FindNZBInfoIndex(pDownloadQueue, pPostInfo->GetNZBInfo());
-		fprintf(outfile, "%i,%i\n", iNZBIndex, (int)pPostInfo->GetStage());
+		fprintf(outfile, "%i,%i,%i,%i\n", iNZBIndex,
+			(int)pPostInfo->GetParStatus(), (int)pPostInfo->GetUnpackStatus(), (int)pPostInfo->GetStage());
 		fprintf(outfile, "%s\n", pPostInfo->GetInfoName());
+		fprintf(outfile, "%s\n", pPostInfo->GetParFilename());
 	}
 }
 
@@ -650,18 +652,18 @@ bool DiskState::LoadPostQueue(DownloadQueue* pDownloadQueue, FILE* infile, int i
 	for (int i = 0; i < size; i++)
 	{
 		PostInfo* pPostInfo = NULL;
-		unsigned int iNZBIndex, iStage, iDummy;
+		unsigned int iNZBIndex, iParCheck, iParStatus = 0, iUnpackStatus = 0, iStage;
 		if (iFormatVersion < 19)
 		{
-			if (fscanf(infile, "%i,%i,%i,%i\n", &iNZBIndex, &iDummy, &iDummy, &iStage) != 4) goto error;
-		}
-		else if (iFormatVersion < 22)
-		{
-			if (fscanf(infile, "%i,%i,%i,%i\n", &iNZBIndex, &iDummy, &iDummy, &iStage) != 4) goto error;
+			if (fscanf(infile, "%i,%i,%i,%i\n", &iNZBIndex, &iParCheck, &iParStatus, &iStage) != 4) goto error;
+			if (!iParCheck)
+			{
+				iParStatus = PostInfo::psSkipped;
+			}
 		}
 		else
 		{
-			if (fscanf(infile, "%i,%i\n", &iNZBIndex, &iStage) != 4) goto error;
+			if (fscanf(infile, "%i,%i,%i,%i\n", &iNZBIndex, &iParStatus, &iUnpackStatus, &iStage) != 4) goto error;
 		}
 		if (iFormatVersion < 18 && iStage > (int)PostInfo::ptVerifyingRepaired) iStage++;
 		if (iFormatVersion < 21 && iStage > (int)PostInfo::ptVerifyingRepaired) iStage++;
@@ -671,6 +673,8 @@ bool DiskState::LoadPostQueue(DownloadQueue* pDownloadQueue, FILE* infile, int i
 		{
 			pPostInfo = new PostInfo();
 			pPostInfo->SetNZBInfo(pDownloadQueue->GetNZBInfoList()->at(iNZBIndex - 1));
+			pPostInfo->SetParStatus((PostInfo::EParStatus)iParStatus);
+			pPostInfo->SetUnpackStatus((PostInfo::EUnpackStatus)iUnpackStatus);
 			pPostInfo->SetStage((PostInfo::EStage)iStage);
 		}
 
@@ -678,11 +682,9 @@ bool DiskState::LoadPostQueue(DownloadQueue* pDownloadQueue, FILE* infile, int i
 		if (buf[0] != 0) buf[strlen(buf)-1] = 0; // remove traling '\n'
 		if (!bSkipPostQueue) pPostInfo->SetInfoName(buf);
 
-		if (iFormatVersion < 22)
-		{
-			// ParFilename, ignore
-			if (!fgets(buf, sizeof(buf), infile)) goto error;
-		}
+		if (!fgets(buf, sizeof(buf), infile)) goto error;
+		if (buf[0] != 0) buf[strlen(buf)-1] = 0; // remove traling '\n'
+		if (!bSkipPostQueue) pPostInfo->SetParFilename(buf);
 
 		if (!bSkipPostQueue)
 		{
@@ -775,8 +777,9 @@ bool DiskState::LoadOldPostQueue(DownloadQueue* pDownloadQueue)
 			pNZBInfo->SetDestDir(buf);
 		}
 
-		// ParFilename, ignore
 		if (!fgets(buf, sizeof(buf), infile)) goto error;
+		if (buf[0] != 0) buf[strlen(buf)-1] = 0; // remove traling '\n'
+		pPostInfo->SetParFilename(buf);
 
 		if (!fgets(buf, sizeof(buf), infile)) goto error;
 		if (buf[0] != 0) buf[strlen(buf)-1] = 0; // remove traling '\n'
@@ -820,7 +823,7 @@ bool DiskState::LoadOldPostQueue(DownloadQueue* pDownloadQueue)
 		if (fscanf(infile, "%i\n", &iParCheck) != 1) goto error; // ParCheck
 
 		if (fscanf(infile, "%i\n", &iIntValue) != 1) goto error;
-		pNZBInfo->SetParStatus(iParCheck ? (NZBInfo::EParStatus)iIntValue : NZBInfo::psSkipped);
+		pPostInfo->SetParStatus(iParCheck ? (PostInfo::EParStatus)iIntValue : PostInfo::psSkipped);
 
 		if (iFormatVersion < 7)
 		{
@@ -1063,7 +1066,7 @@ bool DiskState::DiscardDownloadQueue()
 	char FileSignatur[128];
 	fgets(FileSignatur, sizeof(FileSignatur), infile);
 	int iFormatVersion = ParseFormatVersion(FileSignatur);
-	if (3 <= iFormatVersion && iFormatVersion <= 22)
+	if (3 <= iFormatVersion && iFormatVersion <= 21)
 	{
 		// skip nzb-infos
 		int size = 0;

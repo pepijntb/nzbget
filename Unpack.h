@@ -89,7 +89,7 @@ public:
 	virtual				~UnpackController();
 	virtual void		Run();
 	virtual void		Stop();
-	static void			StartJob(PostInfo* pPostInfo);
+	static void			StartUnpackJob(PostInfo* pPostInfo);
 };
 
 class MoveController : public Thread, public ScriptController
@@ -103,7 +103,7 @@ private:
 
 public:
 	virtual void		Run();
-	static void			StartJob(PostInfo* pPostInfo);
+	static void			StartMoveJob(PostInfo* pPostInfo);
 };
 
 #endif

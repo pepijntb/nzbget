@@ -31,16 +31,17 @@
 #include <deque>
 
 #include "Thread.h"
+#include "Observer.h"
 
-class ParChecker : public Thread
+class ParChecker : public Thread, public Subject
 {
 public:
 	enum EStatus
 	{
+        psUndefined,
+		psWorking,
 		psFailed,
-		psRepairPossible,
-		psRepaired,
-		psRepairNotNeeded
+		psFinished
 	};
 
 	enum EStage
@@ -55,13 +56,12 @@ public:
 	
 private:
 	char*				m_szInfoName;
-	char*				m_szDestDir;
-	char*				m_szNZBName;
-	const char*			m_szParFilename;
+	char*				m_szParFilename;
 	EStatus				m_eStatus;
 	EStage				m_eStage;
 	void*				m_pRepairer;	// declared as void* to prevent the including of libpar2-headers into this header-file
 	char*				m_szErrMsg;
+	bool				m_bRepairNotNeeded;
 	FileList			m_QueuedParFiles;
 	Mutex			 	m_mutexQueuedParFiles;
 	bool				m_bQueuedParFilesChanged;
@@ -75,8 +75,6 @@ private:
 	int					m_iStageProgress;
 	bool				m_bCancelled;
 
-	EStatus				RunParCheck(const char* szParFilename);
-	void				WriteBrokenLog(EStatus eStatus);
 	void				Cleanup();
 	bool				LoadMorePars();
 	bool				CheckSplittedFragments();
@@ -94,7 +92,6 @@ protected:
 	*/
 	virtual bool		RequestMorePars(int iBlockNeeded, int* pBlockFound) = 0;
 	virtual void		UpdateProgress() {}
-	virtual void		Completed() {}
 	EStage				GetStage() { return m_eStage; }
 	const char*			GetProgressLabel() { return m_szProgressLabel; }
 	int					GetFileProgress() { return m_iFileProgress; }
@@ -104,12 +101,14 @@ public:
 						ParChecker();
 	virtual				~ParChecker();
 	virtual void		Run();
-	void				SetDestDir(const char* szDestDir);
 	const char*			GetParFilename() { return m_szParFilename; }
+	void				SetParFilename(const char* szParFilename);
 	const char*			GetInfoName() { return m_szInfoName; }
 	void				SetInfoName(const char* szInfoName);
-	void				SetNZBName(const char* szNZBName);
+	void				SetStatus(EStatus eStatus);
 	EStatus				GetStatus() { return m_eStatus; }
+	const char*			GetErrMsg() { return m_szErrMsg; }
+	bool				GetRepairNotNeeded() { return m_bRepairNotNeeded; }
 	void				AddParFile(const char* szParFilename);
 	void				QueueChanged();
 	void				Cancel();

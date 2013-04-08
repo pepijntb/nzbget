@@ -29,6 +29,7 @@
 #include <list>
 #include <deque>
 
+#include "Observer.h"
 #include "DownloadInfo.h"
 
 #ifndef DISABLE_PARCHECK
@@ -40,6 +41,13 @@ class ParCoordinator
 {
 private:
 #ifndef DISABLE_PARCHECK
+	class ParCheckerObserver: public Observer
+	{
+	public:
+		ParCoordinator*	m_pOwner;
+		virtual void	Update(Subject* Caller, void* Aspect) { m_pOwner->ParCheckerUpdate(Caller, Aspect); }
+	};
+
 	class PostParChecker: public ParChecker
 	{
 	private:
@@ -48,12 +56,18 @@ private:
 	protected:
 		virtual bool	RequestMorePars(int iBlockNeeded, int* pBlockFound);
 		virtual void	UpdateProgress();
-		virtual void	Completed() { m_pOwner->ParCheckCompleted(); }
 	public:
 		PostInfo*		GetPostInfo() { return m_pPostInfo; }
 		void			SetPostInfo(PostInfo* pPostInfo) { m_pPostInfo = pPostInfo; }
 
 		friend class ParCoordinator;
+	};
+
+	class ParRenamerObserver: public Observer
+	{
+	public:
+		ParCoordinator*	m_pOwner;
+		virtual void	Update(Subject* Caller, void* Aspect) { m_pOwner->ParRenamerUpdate(Caller, Aspect); }
 	};
 
 	class PostParRenamer: public ParRenamer
@@ -63,7 +77,6 @@ private:
 		PostInfo*		m_pPostInfo;
 	protected:
 		virtual void	UpdateProgress();
-		virtual void	Completed() { m_pOwner->ParRenameCompleted(); }
 	public:
 		PostInfo*		GetPostInfo() { return m_pPostInfo; }
 		void			SetPostInfo(PostInfo* pPostInfo) { m_pPostInfo = pPostInfo; }
@@ -87,9 +100,11 @@ private:
 
 private:
 	PostParChecker		m_ParChecker;
+	ParCheckerObserver	m_ParCheckerObserver;
 	bool				m_bStopped;
 	bool				m_bPostScript;
 	PostParRenamer		m_ParRenamer;
+	ParRenamerObserver	m_ParRenamerObserver;
 	EJobKind			m_eCurrentJob;
 
 protected:
@@ -109,8 +124,8 @@ public:
 	void				PausePars(DownloadQueue* pDownloadQueue, NZBInfo* pNZBInfo);
 
 #ifndef DISABLE_PARCHECK
-	void				ParCheckCompleted();
-	void				ParRenameCompleted();
+	void				ParCheckerUpdate(Subject* Caller, void* Aspect);
+	void				ParRenamerUpdate(Subject* Caller, void* Aspect);
 	void				CheckPauseState(PostInfo* pPostInfo);
 	bool				AddPar(FileInfo* pFileInfo, bool bDeleted);
 	bool				RequestMorePars(NZBInfo* pNZBInfo, const char* szParFilename, int iBlockNeeded, int* pBlockFound);

@@ -673,21 +673,13 @@ bool ArticleDownloader::PrepareFile(char* szLine)
 /* creates output file and subdirectores */
 bool ArticleDownloader::CreateOutputFile(int iSize)
 {
-	if (g_pOptions->GetDirectWrite() && Util::FileExists(m_szOutputFilename) &&
-		Util::FileSize(m_szOutputFilename) == iSize)
-	{
-		// keep existing old file from previous program session
-		return true;
-	}
-		
 	// delete eventually existing old file from previous program session
 	remove(m_szOutputFilename);
 
 	// ensure the directory exist
 	char szDestDir[1024];
 	int iMaxlen = Util::BaseFileName(m_szOutputFilename) - m_szOutputFilename;
-	if (iMaxlen > 1024-1) iMaxlen = 1024-1;
-	strncpy(szDestDir, m_szOutputFilename, iMaxlen);
+	strncpy(szDestDir, m_szOutputFilename, iMaxlen < 1024 ? iMaxlen : 1024-1);
 	szDestDir[iMaxlen] = '\0';
 
 	if (!Util::ForceDirectories(szDestDir))
@@ -1045,8 +1037,7 @@ void ArticleDownloader::CompleteFileParts()
 			debug("Checking old dir for: %s", m_szOutputFilename);
 			char szOldDestDir[1024];
 			int iMaxlen = Util::BaseFileName(m_szOutputFilename) - m_szOutputFilename;
-			if (iMaxlen > 1024-1) iMaxlen = 1024-1;
-			strncpy(szOldDestDir, m_szOutputFilename, iMaxlen);
+			strncpy(szOldDestDir, m_szOutputFilename, iMaxlen < 1024 ? iMaxlen : 1024-1);
 			szOldDestDir[iMaxlen] = '\0';
 			if (Util::DirEmpty(szOldDestDir))
 			{

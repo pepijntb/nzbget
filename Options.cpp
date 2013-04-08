@@ -161,6 +161,7 @@ static const char* OPTION_NZBDIRFILEAGE			= "NzbDirFileAge";
 static const char* OPTION_PARCLEANUPQUEUE		= "ParCleanupQueue";
 static const char* OPTION_DISKSPACE				= "DiskSpace";
 static const char* OPTION_PROCESSLOGKIND		= "ProcessLogKind";
+static const char* OPTION_ALLOWREPROCESS		= "AllowReProcess";
 static const char* OPTION_DUMPCORE				= "DumpCore";
 static const char* OPTION_PARPAUSEQUEUE			= "ParPauseQueue";
 static const char* OPTION_POSTPAUSEQUEUE		= "PostPauseQueue";
@@ -180,7 +181,6 @@ static const char* OPTION_UNPACKPAUSEQUEUE		= "UnpackPauseQueue";
 static const char* OPTION_POSTLOGKIND			= "PostLogKind";
 static const char* OPTION_NZBLOGKIND			= "NZBLogKind";
 static const char* OPTION_RETRYONCRCERROR		= "RetryOnCrcError";
-static const char* OPTION_ALLOWREPROCESS		= "AllowReProcess";
 
 const char* BoolNames[] = { "yes", "no", "true", "false", "1", "0", "on", "off", "enable", "disable", "enabled", "disabled" };
 const int BoolValues[] = { 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0 };
@@ -423,6 +423,7 @@ Options::Options(int argc, char* argv[])
 	m_bParCleanupQueue		= false;
 	m_iDiskSpace			= 0;
 	m_eProcessLogKind		= slNone;
+	m_bAllowReProcess		= false;
 	m_bTestBacktrace		= false;
 	m_bTLS					= false;
 	m_bDumpCore				= false;
@@ -757,6 +758,7 @@ void Options::InitDefault()
 	SetOption(OPTION_PARCLEANUPQUEUE, "yes");
 	SetOption(OPTION_DISKSPACE, "250");
 	SetOption(OPTION_PROCESSLOGKIND, "detail");
+	SetOption(OPTION_ALLOWREPROCESS, "no");
 	SetOption(OPTION_DUMPCORE, "no");
 	SetOption(OPTION_PARPAUSEQUEUE, "no");
 	SetOption(OPTION_POSTPAUSEQUEUE, "no");
@@ -950,6 +952,7 @@ void Options::InitOptions()
 	m_bDirectWrite			= (bool)ParseEnumValue(OPTION_DIRECTWRITE, BoolCount, BoolNames, BoolValues);
 	m_bParCleanupQueue		= (bool)ParseEnumValue(OPTION_PARCLEANUPQUEUE, BoolCount, BoolNames, BoolValues);
 	m_bDecode				= (bool)ParseEnumValue(OPTION_DECODE, BoolCount, BoolNames, BoolValues);
+	m_bAllowReProcess		= (bool)ParseEnumValue(OPTION_ALLOWREPROCESS, BoolCount, BoolNames, BoolValues);
 	m_bDumpCore				= (bool)ParseEnumValue(OPTION_DUMPCORE, BoolCount, BoolNames, BoolValues);
 	m_bParPauseQueue		= (bool)ParseEnumValue(OPTION_PARPAUSEQUEUE, BoolCount, BoolNames, BoolValues);
 	m_bPostPauseQueue		= (bool)ParseEnumValue(OPTION_POSTPAUSEQUEUE, BoolCount, BoolNames, BoolValues);
@@ -1486,20 +1489,9 @@ void Options::InitCommandLine(int argc, char* argv[])
 					{
 						if (!bGroup)
 						{
-							abort("FATAL ERROR: Only groups can be merged\n");
+							abort("FATAL ERROR: only groups can be merged\n");
 						}
 						m_iEditQueueAction = eRemoteEditActionGroupMerge;
-					}
-					else if (!strcasecmp(optarg, "S"))
-					{
-						m_iEditQueueAction = eRemoteEditActionFileSplit;
-
-						optind++;
-						if (optind > argc)
-						{
-							abort("FATAL ERROR: Could not parse value of option 'E'\n");
-						}
-						m_szEditQueueText = strdup(argv[optind-1]);
 					}
 					else if (!strcasecmp(optarg, "O"))
 					{
@@ -1704,7 +1696,6 @@ void Options::PrintUsage(char* com)
 		"       C <name>             Set category (for groups)\n"
 		"       N <name>             Rename (for groups)\n"
 		"       M                    Merge (for groups)\n"
-		"       S <name>             Split - create new group from selected files\n"
 		"       O <name>=<value>     Set post-process parameter (for groups)\n"
 		"       I <priority>         Set priority (signed integer) for file(s)/group(s)\n"
 		"    <IDs>                   Comma-separated list of file-ids or ranges\n"
@@ -2385,7 +2376,7 @@ bool Options::ValidateOptionName(const char * optname)
 		ConfigWarn("Option \"%s\" is obsolete, use \"%s\" instead", optname, OPTION_PROCESSLOGKIND);
 		return true;
 	}
-	if (!strcasecmp(optname, OPTION_RETRYONCRCERROR) || !strcasecmp(optname, OPTION_ALLOWREPROCESS))
+	if (!strcasecmp(optname, OPTION_RETRYONCRCERROR))
 	{
 		ConfigWarn("Option \"%s\" is obsolete, ignored", optname);
 		return true;
@@ -2423,6 +2414,13 @@ void Options::CheckOptions()
 	if (!m_bDecode)
 	{
 		m_bDirectWrite = false;
+	}
+
+	if (m_bUnpack && m_bAllowReProcess)
+	{
+		LocateOptionSrcPos(OPTION_ALLOWREPROCESS);
+		ConfigError("Options \"%s\" and \"%s\" cannot be both active at the same time", OPTION_UNPACK, OPTION_ALLOWREPROCESS);
+		m_bAllowReProcess = false;
 	}
 }
 
