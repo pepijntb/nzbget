@@ -31,7 +31,6 @@
 "Status.Left"="%@ left";
 "Status.NoConnection"="Downloader Not Responding";
 "Status.Restarting"="Restarting";
-"Status.PreventSleep"="NZBGet is downloading or post-processing";
 
 "Left.Days"="%i days";
 "Left.Days.Hours"="%id %ih";
